@@ -1,0 +1,176 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Plagiarism Detection System
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 1024
+    Runtime: python3.14
+    Environment:
+      Variables:
+        DYNAMODB_TABLE: !Ref SubmissionsTable
+        S3_BUCKET: plagiarism-detection-assignments
+
+Resources:
+  # DynamoDB Table for storing submissions and plagiarism data
+  SubmissionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: plagiarism-submissions
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      BillingMode: PAY_PER_REQUEST
+
+  # S3 Bucket for storing uploaded files
+  SubmissionsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: plagiarism-detection-assignments
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt ProcessSubmissionFunction.Arn
+
+  # IAM Role for Lambda functions
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAndS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt SubmissionsTable.Arn
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - textract:StartDocumentTextDetection
+                  - textract:GetDocumentTextDetection
+                Resource: '*'
+
+  # Lambda function for processing uploads
+  ProcessSubmissionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ProcessSubmission
+      CodeUri: functions/upload/
+      Handler: handler.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+
+  ProcessSubmissionFunctionS3Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt ProcessSubmissionFunction.Arn
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt SubmissionsBucket.Arn
+      SourceAccount: !Ref AWS::AccountId
+
+  # Lambda function for similarity checking
+  SimilarityCheckFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: SimilarityCheck
+      CodeUri: functions/similarity/
+      Handler: handler.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+
+  # API Gateway for REST endpoints
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: PlagiarismDetectionAPI
+      StageName: prod
+      Cors:
+        AllowMethods: 'GET,POST,PUT,DELETE,OPTIONS'
+        AllowHeaders: 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'
+        AllowOrigin: '*'
+
+  # Lambda function for API endpoints
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: PlagiarismAPI
+      CodeUri: functions/api/
+      Handler: app.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetSubmissions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /submissions
+            Method: get
+        UploadSubmission:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /upload
+            Method: post
+        CheckSimilarity:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /similarity/{submissionId}
+            Method: post
+
+Outputs:
+  ApiUrl:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod"
+  SubmissionsBucketName:
+    Description: "S3 bucket for submissions"
+    Value: !Ref SubmissionsBucket
+  SubmissionsTableName:
+    Description: "DynamoDB table for submissions"
+    Value: !Ref SubmissionsTable
