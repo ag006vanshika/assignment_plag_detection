@@ -21,7 +21,12 @@ import {
   CardContent,
   Grid,
   LinearProgress,
-  Alert
+  Alert,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 
@@ -45,6 +50,10 @@ function TeacherDashboard() {
     status: 'all',
     similarityThreshold: 0
   });
+  const [selectedSubmission, setSelectedSubmission] = useState(null);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
 
   useEffect(() => {
     fetchSubmissions();
@@ -112,6 +121,95 @@ function TeacherDashboard() {
   const handleChangeRowsPerPage = (event) => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
+  };
+
+  const handleDeleteSubmission = async (submissionId) => {
+    if (!window.confirm('Delete this submission and its uploaded file?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:5000/submissions/${submissionId}`, {
+        method: 'DELETE'
+      });
+
+      const result = await response.json();
+      if (response.ok) {
+        setSubmissions((prev) => prev.filter((submission) => submission.id !== submissionId));
+      } else {
+        setError(result.error || 'Failed to delete submission');
+      }
+    } catch (err) {
+      setError('Network error. Unable to delete submission.');
+    }
+  };
+
+  const openSubmissionDetails = async (submissionId) => {
+    try {
+      setDetailLoading(true);
+      setDetailError('');
+      const response = await fetch(`http://localhost:5000/submissions/${submissionId}`);
+      const data = await response.json();
+      if (response.ok) {
+        setSelectedSubmission(data.submission);
+        setSubmissions((prev) => prev.map((submission) =>
+          submission.id === data.submission.id
+            ? {
+                ...submission,
+                status: data.submission.status,
+                flagged: data.submission.flagged,
+                similarityScore: data.submission.similarityScore
+              }
+            : submission
+        ));
+        setDetailDialogOpen(true);
+      } else {
+        setDetailError(data.error || 'Failed to load submission details');
+      }
+    } catch (err) {
+      setDetailError('Network error. Unable to load submission details.');
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const closeSubmissionDetails = () => {
+    setSelectedSubmission(null);
+    setDetailDialogOpen(false);
+    setDetailError('');
+  };
+
+  const handleMarkReviewed = async (submissionId) => {
+    try {
+      const response = await fetch(`http://localhost:5000/submissions/${submissionId}/review`, {
+        method: 'PATCH'
+      });
+      const data = await response.json();
+      if (response.ok) {
+        fetchSubmissions();
+        closeSubmissionDetails();
+      } else {
+        setDetailError(data.error || 'Failed to mark reviewed');
+      }
+    } catch (err) {
+      setDetailError('Network error. Unable to mark reviewed.');
+    }
+  };
+
+  const handleFlagSubmission = async (submissionId) => {
+    try {
+      const response = await fetch(`http://localhost:5000/submissions/${submissionId}/flag`, {
+        method: 'PATCH'
+      });
+      const data = await response.json();
+      if (response.ok) {
+        fetchSubmissions();
+      } else {
+        setError(data.error || 'Failed to flag submission');
+      }
+    } catch (err) {
+      setError('Network error. Unable to flag submission.');
+    }
   };
 
   if (loading) {
@@ -285,9 +383,27 @@ function TeacherDashboard() {
                       size="small"
                     />
                   </TableCell>
-                  <TableCell>
-                    <Button size="small" variant="outlined">
+                  <TableCell sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    <Button size="small" variant="outlined" onClick={() => openSubmissionDetails(submission.id)}>
                       View Details
+                    </Button>
+                    {submission.status !== 'FLAGGED' && submission.status !== 'REVIEWED' && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="warning"
+                        onClick={() => handleFlagSubmission(submission.id)}
+                      >
+                        Flag
+                      </Button>
+                    )}
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="error"
+                      onClick={() => handleDeleteSubmission(submission.id)}
+                    >
+                      Delete
                     </Button>
                   </TableCell>
                 </StyledTableRow>
@@ -304,6 +420,39 @@ function TeacherDashboard() {
           onRowsPerPageChange={handleChangeRowsPerPage}
         />
       </Paper>
+
+      <Dialog open={detailDialogOpen} onClose={closeSubmissionDetails} fullWidth maxWidth="md">
+        <DialogTitle>Submission Details</DialogTitle>
+        <DialogContent dividers>
+          {detailLoading ? (
+            <Typography>Loading details…</Typography>
+          ) : detailError ? (
+            <Alert severity="error">{detailError}</Alert>
+          ) : selectedSubmission ? (
+            <Box sx={{ display: 'grid', gap: 2 }}>
+              <Typography><strong>Student ID:</strong> {selectedSubmission.studentId}</Typography>
+              <Typography><strong>Course ID:</strong> {selectedSubmission.courseId}</Typography>
+              <Typography><strong>File:</strong> {selectedSubmission.fileName}</Typography>
+              <Typography><strong>Status:</strong> {selectedSubmission.status}</Typography>
+              <Typography><strong>Similarity Score:</strong> {((selectedSubmission.similarityScore || 0) * 100).toFixed(1)}%</Typography>
+              <Typography><strong>Flagged:</strong> {selectedSubmission.flagged ? 'Yes' : 'No'}</Typography>
+              <Typography><strong>Matched Submission:</strong> {selectedSubmission.matchedSubmissionId || 'None'}</Typography>
+              <Typography variant="subtitle1" sx={{ mt: 2 }}><strong>Extracted Text</strong></Typography>
+              <Paper variant="outlined" sx={{ p: 2, maxHeight: 320, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+                {selectedSubmission.extractedText || 'No extracted text available.'}
+              </Paper>
+            </Box>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          {selectedSubmission && selectedSubmission.status !== 'REVIEWED' && (
+            <Button onClick={() => handleMarkReviewed(selectedSubmission.id)} color="success">
+              Mark Reviewed
+            </Button>
+          )}
+          <Button onClick={closeSubmissionDetails}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 }

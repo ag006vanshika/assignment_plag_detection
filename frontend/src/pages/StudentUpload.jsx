@@ -8,24 +8,39 @@ import {
   LinearProgress,
   Alert,
   Card,
-  CardContent
+  CardContent,
+  TextField,
+  MenuItem
 } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import { useNavigate } from 'react-router-dom';
+
+const availableCourses = [
+  { id: 'DAA', label: 'DAA' },
+  { id: 'SoftSkill', label: 'Soft Skill' },
+  { id: 'ComputerNetworks', label: 'Computer Networks' },
+  { id: 'OperatingSystems', label: 'Operating Systems' },
+  { id: 'CloudDevelopment', label: 'Cloud Development' },
+  { id: 'DataEngineering', label: 'Data Engineering' },
+  { id: 'Aptitude', label: 'Aptitude' },
+  { id: 'WebTechnology', label: 'Web Technology' }
+];
 
 function StudentUpload() {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
+  const [studentId, setStudentId] = useState('');
+  const [courseId, setCourseId] = useState('');
   const navigate = useNavigate();
 
   const handleFileChange = (event) => {
     const selectedFile = event.target.files[0];
     if (selectedFile) {
       // Validate file type
-      const allowedTypes = ['application/pdf', 'text/plain', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+      const allowedTypes = ['application/pdf', 'text/plain'];
       if (!allowedTypes.includes(selectedFile.type)) {
-        setMessage('Please select a PDF, DOC, DOCX, or TXT file.');
+        setMessage('Please select a PDF or TXT file.');
         return;
       }
 
@@ -50,10 +65,22 @@ function StudentUpload() {
     setMessage('');
 
     try {
+      if (!studentId.trim()) {
+        setMessage('Please enter your student ID.');
+        setUploading(false);
+        return;
+      }
+
+      if (!courseId) {
+        setMessage('Please select a course for this submission.');
+        setUploading(false);
+        return;
+      }
+
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('studentId', 'student123'); // In real app, get from auth
-      formData.append('courseId', 'course123'); // In real app, get from context
+      formData.append('studentId', studentId.trim());
+      formData.append('courseId', courseId);
 
       const response = await fetch('http://localhost:5000/upload', {
         method: 'POST',
@@ -100,7 +127,7 @@ function StudentUpload() {
             }}
           >
             <input
-              accept=".pdf,.doc,.docx,.txt"
+              accept=".pdf,.txt"
               style={{ display: 'none' }}
               id="file-upload"
               type="file"
@@ -128,16 +155,40 @@ function StudentUpload() {
             )}
           </Box>
 
-          <Box sx={{ textAlign: 'center', mb: 3 }}>
-            <Button
-              variant="contained"
-              size="large"
-              onClick={handleUpload}
-              disabled={!file || uploading}
-              sx={{ minWidth: 200 }}
+          <Box sx={{ mb: 3, display: 'grid', gap: 2 }}>
+            <TextField
+              label="Student ID"
+              value={studentId}
+              onChange={(e) => setStudentId(e.target.value)}
+              fullWidth
+              size="small"
+            />
+            <TextField
+              label="Select Course"
+              value={courseId}
+              onChange={(e) => setCourseId(e.target.value)}
+              select
+              fullWidth
+              size="small"
             >
-              {uploading ? 'Uploading...' : 'Upload Assignment'}
-            </Button>
+              <MenuItem value="">Select a course</MenuItem>
+              {availableCourses.map((course) => (
+                <MenuItem key={course.id} value={course.id}>
+                  {course.label}
+                </MenuItem>
+              ))}
+            </TextField>
+            <Box sx={{ textAlign: 'center' }}>
+              <Button
+                variant="contained"
+                size="large"
+                onClick={handleUpload}
+                disabled={!file || uploading}
+                sx={{ minWidth: 200 }}
+              >
+                {uploading ? 'Uploading...' : 'Upload Assignment'}
+              </Button>
+            </Box>
           </Box>
 
           {uploading && (
