@@ -6,16 +6,17 @@ from text_processor import (
     dice_similarity,
     find_similar_sections
 )
+import difflib
 import os
 
-def calculate_similarity(text1, text2, method='jaccard'):
+def calculate_similarity(text1, text2, method='best'):
     """
     Main function to calculate similarity between two texts
 
     Args:
         text1 (str): First text (raw or preprocessed)
         text2 (str): Second text (raw or preprocessed)
-        method (str): Similarity method to use
+        method (str): Similarity method to use. Defaults to 'best'.
 
     Returns:
         float: Similarity score between 0 and 1
@@ -25,6 +26,22 @@ def calculate_similarity(text1, text2, method='jaccard'):
         text1 = preprocess_text(text1)
     if _is_raw_text(text2):
         text2 = preprocess_text(text2)
+
+    # If normalized text is identical, return perfect similarity immediately
+    if text1 == text2:
+        return 1.0
+
+    if method == 'best':
+        scores = {
+            'jaccard': jaccard_similarity(text1, text2),
+            'cosine': cosine_similarity(text1, text2),
+            'dice': dice_similarity(text1, text2),
+            'sequence': difflib.SequenceMatcher(None, text1, text2).ratio()
+        }
+        return max(scores.values())
+
+    if method == 'sequence':
+        return difflib.SequenceMatcher(None, text1, text2).ratio()
 
     return calculate_text_similarity(text1, text2, method)
 

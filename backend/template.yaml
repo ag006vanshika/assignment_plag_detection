@@ -55,10 +55,6 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt ProcessSubmissionFunction.Arn
 
   # IAM Role for Lambda functions
   LambdaExecutionRole:
@@ -132,9 +128,9 @@ Resources:
       Name: PlagiarismDetectionAPI
       StageName: prod
       Cors:
-        AllowMethods: 'GET,POST,PUT,DELETE,OPTIONS'
-        AllowHeaders: 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'
-        AllowOrigin: '*'
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
 
   # Lambda function for API endpoints
   ApiFunction:
